@@ -7,6 +7,7 @@ export const STATUS = {
   paused:    { label: 'Paused',    color: '#b45309' },
   failed:    { label: 'Failed',    color: '#b91c1c' },
   completed: { label: 'Completed', color: '#4b5563' },
+  blocked:   { label: 'Blocked',   color: '#6d28d9' },
   success:   { label: 'Success',   color: '#047857' },
   running:   { label: 'Running',   color: '#1d4ed8' },
   queued:    { label: 'Queued',    color: '#6d28d9' },

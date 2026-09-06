@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
-  ArrowLeft, Play, Pause, Power, RefreshCw, Clock, 
+  ArrowLeft, Power, RefreshCw, Clock, Pencil,
   CheckCircle, AlertTriangle, XCircle, Loader,
   BarChart3, Calendar, User, Zap
 } from 'lucide-react';
+import JobForm from '../components/JobForm';
+import ExecuteNow from '../components/ExecuteNow';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, LineChart, Line 
@@ -21,7 +23,8 @@ const JobDetail = () => {
   const [executions, setExecutions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
-  const { getJob, triggerExecution, pauseJob, resumeJob } = useJobContext();
+  const [formOpen, setFormOpen] = useState(false);
+  const { getJob, pauseJob, resumeJob } = useJobContext();
   const { socket } = useSocket();
 
   const fetchData = async () => {
@@ -66,17 +69,19 @@ const JobDetail = () => {
     };
   }, [socket, id]);
 
-  const handleExecute = async () => {
-    try {
-      await triggerExecution(id);
-      toast.success('Execution triggered');
-      fetchData();
-    } catch (error) {
-      toast.error('Failed to trigger execution');
-    }
-  };
-
+  // A blocked job pauses via the pause endpoint, but its primary action is a
+  // single-click unblock straight back to scheduled 'active'.
   const handlePauseToggle = async () => {
+    if (job.status === 'blocked') {
+      try {
+        await resumeJob(id);
+        toast.success('Job unblocked — scheduling restored');
+        fetchData();
+      } catch (error) {
+        toast.error('Failed to unblock job');
+      }
+      return;
+    }
     const pausing = job.status !== 'paused';
     try {
       await (pausing ? pauseJob(id) : resumeJob(id));
@@ -132,12 +137,14 @@ const JobDetail = () => {
         <div className="header-actions">
           {job.status !== 'completed' && (
             <button className="btn-secondary" onClick={handlePauseToggle}>
-              <Power size={16} /> {job.status === 'paused' ? 'Resume' : 'Pause'}
+              <Power size={16} />
+              {job.status === 'blocked' ? 'Unblock' : job.status === 'paused' ? 'Resume' : 'Pause'}
             </button>
           )}
-          <button className="btn-primary" onClick={handleExecute}>
-            <Play size={16} /> Execute Now
+          <button className="btn-secondary" onClick={() => setFormOpen(true)}>
+            <Pencil size={16} /> Edit
           </button>
+          <ExecuteNow jobId={job._id} onAfterRun={fetchData} />
         </div>
       </div>
 
@@ -285,6 +292,14 @@ const JobDetail = () => {
             ))}
           </div>
         </div>
+      )}
+
+      {formOpen && (
+        <JobForm
+          job={job}
+          onClose={() => setFormOpen(false)}
+          onSaved={fetchData}
+        />
       )}
 
       {activeTab === 'charts' && (

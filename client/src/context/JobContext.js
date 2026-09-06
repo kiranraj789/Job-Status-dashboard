@@ -18,8 +18,14 @@ export const JobProvider = ({ children }) => {
         headers: { 'Content-Type': 'application/json' },
         ...options
       });
-      if (!response.ok) throw new Error(`API Error: ${response.status}`);
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        // Surface the server's error message (e.g. dependency-blocked runs)
+        // instead of a bare status code.
+        const err = new Error((data && data.error) || `API Error: ${response.status}`);
+        err.status = response.status;
+        throw err;
+      }
       setLoading(false);
       return data;
     } catch (err) {
@@ -40,7 +46,8 @@ export const JobProvider = ({ children }) => {
   const pauseJob = (id) => apiCall(`/jobs/${id}/pause`, { method: 'PUT' });
   const resumeJob = (id) => apiCall(`/jobs/${id}/resume`, { method: 'PUT' });
   const deleteJob = (id) => apiCall(`/jobs/${id}`, { method: 'DELETE' });
-  const triggerExecution = (id) => apiCall(`/jobs/${id}/execute`, { method: 'POST' });
+  const triggerExecution = (id, outcome = 'random') =>
+    apiCall(`/jobs/${id}/execute`, { method: 'POST', body: JSON.stringify({ outcome }) });
   const getExecutions = (id, params = {}) => {
     const query = new URLSearchParams(params).toString();
     return apiCall(`/jobs/${id}/executions?${query}`);

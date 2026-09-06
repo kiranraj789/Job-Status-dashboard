@@ -103,13 +103,14 @@ const emitStatusChange = (req, jobId, status) => {
 };
 
 // Pause a scheduled job: it stops being auto-picked when due, while manual
-// Execute Now still works as an operator override.
+// Execute Now still works as an operator override. Blocked jobs are pausable
+// too so an operator can clear the blocked state (resume restores scheduling).
 exports.pauseJob = async (req, res) => {
   try {
     const job = await BatchJob.findById(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     if (job.status === 'paused') return res.json(job);
-    if (!BatchJob.SCHEDULED_STATUSES.includes(job.status)) {
+    if (!BatchJob.PAUSABLE_STATUSES.includes(job.status)) {
       return res.status(400).json({ error: 'Only scheduled jobs can be paused' });
     }
     job.status = 'paused';
@@ -122,7 +123,8 @@ exports.pauseJob = async (req, res) => {
 };
 
 // Resume a paused job: scheduled pickups are restored without losing state
-// (schedule, counters and history are untouched).
+// (schedule, counters and history are untouched). Also unblocks a job whose
+// upstream dependency failure had it set to 'blocked'.
 exports.resumeJob = async (req, res) => {
   try {
     const job = await BatchJob.findById(req.params.id);
@@ -130,7 +132,7 @@ exports.resumeJob = async (req, res) => {
     if (job.status === 'completed') {
       return res.status(400).json({ error: 'Cannot resume a completed job' });
     }
-    if (job.status !== 'paused') return res.json(job); // already scheduled
+    if (job.status !== 'paused' && job.status !== 'blocked') return res.json(job); // already scheduled
     job.status = 'active';
     await job.save();
     emitStatusChange(req, job._id, job.status);
@@ -140,11 +142,69 @@ exports.resumeJob = async (req, res) => {
   }
 };
 
-// Trigger manual execution
+// Trigger manual execution.
+//
+// Dependency protection: unlike the old implementation, a manual run no
+// longer bypasses upstream dependency checks. If any dependency job is in a
+// failed state the dependent job is marked 'blocked' (a new status), a
+// dependency alert is raised and the request is rejected with 409 — it never
+// starts an execution.
+//
+// Body may carry an explicit outcome so an operator can record a run instead
+// of leaving it to the random simulator:
+//   { outcome: 'random'  } (default) simulated success/failure as before
+//   { outcome: 'success' } run completes successfully
+//   { outcome: 'failed'  } run completes with a failure (alert raised)
+//   { outcome: 'running' } execution is recorded and left running (no completion)
 exports.triggerExecution = async (req, res) => {
   try {
-    const job = await BatchJob.findById(req.params.id);
+    const outcome = req.body && req.body.outcome;
+    if (outcome && !['random', 'success', 'failed', 'running'].includes(outcome)) {
+      return res.status(400).json({ error: `Invalid outcome '${outcome}'. Use random, success, failed or running` });
+    }
+
+    const job = await BatchJob.findById(req.params.id)
+      .populate('dependencies.job', 'name status');
     if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    // Dependency protection: refuse to start when an upstream dependency has
+    // failed, and surface the blockage as an explicit job status.
+    const failedDeps = job.dependencies.filter(d => d.job && d.job.status === 'failed');
+    if (failedDeps.length > 0) {
+      if (job.status !== 'blocked') {
+        job.status = 'blocked';
+        await job.save();
+        emitStatusChange(req, job._id, job.status);
+      }
+
+      const blockedBy = failedDeps.map(d => d.job.name);
+      const alert = await Alert.create({
+        type: 'dependency',
+        severity: 'warning',
+        title: `Dependency failure blocking: ${job.name}`,
+        message: `Manual execution blocked — upstream dependencies failed: ${blockedBy.join(', ')}`,
+        job: job._id,
+        metadata: { affectedDownstream: blockedBy }
+      });
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(ROOM_ALL).emit(EVENTS.ALERT_NEW, {
+          type: 'dependency',
+          severity: alert.severity,
+          title: alert.title,
+          message: alert.message,
+          jobName: job.name,
+          jobId: job._id
+        });
+      }
+
+      return res.status(409).json({
+        error: 'Execution blocked: upstream dependency failures',
+        blockedBy,
+        jobStatus: 'blocked'
+      });
+    }
 
     const execution = await Execution.create({
       job: job._id,
@@ -164,8 +224,15 @@ exports.triggerExecution = async (req, res) => {
       io.to(ROOM_ALL).emit(EVENTS.JOB_STATUS_CHANGE, { jobId: job._id, status: 'running' });
     }
 
-    // Simulate execution completion
-    simulateExecution(execution, job, io);
+    // A recorded 'running' outcome stays running — no completion is simulated.
+    if (outcome === 'running') {
+      return res.json({ execution, message: 'Execution recorded as running' });
+    }
+
+    // Simulate execution completion, forcing the outcome when one was chosen.
+    simulateExecution(execution, job, io, {
+      forceOutcome: outcome === 'success' || outcome === 'failed' ? outcome : undefined
+    });
 
     res.json({ execution, message: 'Execution triggered' });
   } catch (error) {

@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Search, Filter, Play, Pause, Power, Trash2,
+  Search, Filter, Pause, Power, Trash2, Plus, Pencil,
   Clock, CheckCircle, AlertTriangle, RefreshCw,
-  ArrowRight
+  ArrowRight, Ban
 } from 'lucide-react';
 import { useJobContext } from '../context/JobContext';
 import { PRIORITY } from '../constants';
+import JobForm from '../components/JobForm';
+import ExecuteNow from '../components/ExecuteNow';
 import toast from 'react-hot-toast';
 
 const formatNextRun = (iso) => {
@@ -18,6 +20,7 @@ const statusIcons = {
   active: <CheckCircle size={14} />,
   failed: <AlertTriangle size={14} />,
   paused: <Pause size={14} />,
+  blocked: <Ban size={14} />,
   completed: <CheckCircle size={14} />
 };
 
@@ -28,8 +31,13 @@ const JobsList = () => {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ status: '', priority: '', category: '' });
   const [showFilters, setShowFilters] = useState(false);
-  const { getJobs, triggerExecution, pauseJob, resumeJob, deleteJob } = useJobContext();
+  const [formOpen, setFormOpen] = useState(false);
+  const [formJob, setFormJob] = useState(null);
+  const { getJobs, pauseJob, resumeJob, deleteJob } = useJobContext();
   const navigate = useNavigate();
+
+  const openAdd = () => { setFormJob(null); setFormOpen(true); };
+  const openEdit = (e, job) => { e.stopPropagation(); setFormJob(job); setFormOpen(true); };
 
   const fetchJobs = async () => {
     setLoading(true);
@@ -56,19 +64,18 @@ const JobsList = () => {
     fetchJobs();
   };
 
-  const handleExecute = async (e, jobId) => {
-    e.stopPropagation();
-    try {
-      await triggerExecution(jobId);
-      toast.success('Execution triggered');
-      fetchJobs();
-    } catch (error) {
-      toast.error('Failed to trigger execution');
-    }
-  };
-
   const handlePauseToggle = async (e, job) => {
     e.stopPropagation();
+    if (job.status === 'blocked') {
+      try {
+        await resumeJob(job._id);
+        toast.success('Job unblocked — scheduling restored');
+        fetchJobs();
+      } catch (error) {
+        toast.error('Failed to unblock job');
+      }
+      return;
+    }
     const pausing = job.status !== 'paused';
     try {
       await (pausing ? pauseJob(job._id) : resumeJob(job._id));
@@ -98,6 +105,9 @@ const JobsList = () => {
           <h1>Batch Jobs</h1>
           <p className="subtitle">Manage and monitor all scheduled jobs</p>
         </div>
+        <button className="btn-primary" onClick={openAdd}>
+          <Plus size={16} /> Add Job
+        </button>
       </div>
 
       {/* Search & Filters */}
@@ -127,6 +137,7 @@ const JobsList = () => {
             <option value="active">Active</option>
             <option value="failed">Failed</option>
             <option value="paused">Paused</option>
+            <option value="blocked">Blocked</option>
           </select>
           <select value={filters.priority} onChange={(e) => setFilters({ ...filters, priority: e.target.value })}>
             <option value="">All Priority</option>
@@ -211,33 +222,38 @@ const JobsList = () => {
               )}
 
               {job.nextExecution && (
-                <div className={`next-run ${job.status === 'paused' ? 'muted' : ''}`}>
+                <div className={`next-run ${job.status === 'paused' || job.status === 'blocked' ? 'muted' : ''}`}>
                   <Clock size={12} />
                   <span>
                     {job.status === 'paused'
                       ? 'Paused — not scheduled'
-                      : `Next run ${formatNextRun(job.nextExecution)}`}
+                      : job.status === 'blocked'
+                        ? 'Blocked by dependency — not scheduled'
+                        : `Next run ${formatNextRun(job.nextExecution)}`}
                   </span>
                 </div>
               )}
 
               <div className="job-card-actions">
-                <button 
-                  className="btn-icon green"
-                  onClick={(e) => handleExecute(e, job._id)}
-                  title="Execute Now"
-                >
-                  <Play size={14} />
-                </button>
+                <ExecuteNow jobId={job._id} variant="icon" onAfterRun={fetchJobs} />
                 {job.status !== 'completed' && (
                   <button 
-                    className={`btn-icon ${job.status === 'paused' ? 'orange' : ''}`}
+                    className={`btn-icon ${job.status === 'paused' ? 'orange' : job.status === 'blocked' ? 'purple' : ''}`}
                     onClick={(e) => handlePauseToggle(e, job)}
-                    title={job.status === 'paused' ? 'Resume schedule' : 'Pause schedule'}
+                    title={job.status === 'blocked'
+                      ? 'Unblock job'
+                      : job.status === 'paused' ? 'Resume schedule' : 'Pause schedule'}
                   >
                     <Power size={14} />
                   </button>
                 )}
+                <button 
+                  className="btn-icon"
+                  onClick={(e) => openEdit(e, job)}
+                  title="Edit job"
+                >
+                  <Pencil size={14} />
+                </button>
                 <button 
                   className="btn-icon red"
                   onClick={(e) => handleDelete(e, job._id, job.name)}
@@ -264,6 +280,14 @@ const JobsList = () => {
           <h3>No jobs found</h3>
           <p>Try adjusting your search or filters</p>
         </div>
+      )}
+
+      {formOpen && (
+        <JobForm
+          job={formJob}
+          onClose={() => setFormOpen(false)}
+          onSaved={fetchJobs}
+        />
       )}
     </div>
   );

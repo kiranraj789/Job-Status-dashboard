@@ -43,9 +43,11 @@ A full-stack MERN application for visualizing scheduled batch jobs, monitoring e
 
 ### Batch Jobs Management
 - **Job Grid**: Visual cards with status, priority, category, and stats
+- **Add / Edit Jobs**: Create and update jobs — name, schedule (cron), owner, priority, category, tags, and dependencies — from the UI
 - **Advanced Filters**: Filter by status, priority, category
 - **Search**: Full-text search across job names
-- **Manual Execution**: Trigger jobs on-demand
+- **Manual Execution**: Trigger jobs on-demand, or record a specific outcome (success / failed / running) via the caret next to Execute Now
+- **Dependency Protection**: Manual runs refuse to start when an upstream dependency has failed — the dependent job is marked **blocked** instead
 - **Detailed View**: Execution history, timeline, and performance charts
 
 ### Dependency Graph
@@ -109,7 +111,11 @@ CLIENT_URL=http://localhost:3000
 
 The default `npm run dev` script starts an embedded in-memory MongoDB — no local MongoDB install required. If the database is empty, the server automatically seeds it with 15 demo jobs, 300 executions, and 5 alerts, so the dashboard is populated on first launch.
 
-**Option B - Local/Atlas MongoDB:**
+> ⚠️ **In-memory data is ephemeral.** Every job, execution, and alert you create
+> while running `npm run dev` lives only in RAM and is lost the moment the
+> server restarts. Use **Option B** when you want your data to persist.
+
+**Option B - Local/Atlas MongoDB (persistent):**
 
 ```bash
 # Start MongoDB (if running locally)
@@ -122,6 +128,10 @@ MONGO_URI=mongodb://localhost:27017/batchmonitor AUTO_SEED=false npm run dev:mon
 # Seed the database with demo data (only needed the first time)
 npm run seed
 ```
+
+With `npm run dev:mongo` your jobs, executions, and alerts survive server
+restarts (read from `server/.env`'s `MONGO_URI`, defaulting to
+`mongodb://localhost:27017/batchmonitor`).
 
 ### Running the Application
 
@@ -163,6 +173,8 @@ npm test
 ### Executions
 - `GET /api/jobs/:id/executions` - Get execution history
 - `POST /api/jobs/:id/execute` - Trigger manual execution
+  - Body `{ "outcome": "random" | "success" | "failed" | "running" }` (default `random`)
+  - Returns `409` and marks the job `blocked` when an upstream dependency has failed
 
 ### Dependencies
 - `GET /api/dependencies/graph` - Get dependency graph data
@@ -182,7 +194,7 @@ npm test
   cronExpression: String,
   category: 'ETL' | 'Reporting' | 'Analytics' | 'DataSync' | 'Cleanup' | 'Compliance',
   priority: 'critical' | 'high' | 'medium' | 'low',
-  status: 'active' | 'paused' | 'failed' | 'completed',
+  status: 'active' | 'paused' | 'failed' | 'completed' | 'blocked',
   dependencies: [{ job: ObjectId, status: 'pending' | 'satisfied' | 'failed' }],
   estimatedDuration: Number,
   consecutiveFailures: Number,
@@ -227,11 +239,12 @@ npm test
 | Frontend    | React 18, React Router 6      |
 | Charts      | Recharts                      |
 | Icons       | Lucide React                  |
-| Styling     | CSS (Custom Dark Theme)       |
+| Styling     | CSS (Custom Light Theme)      |
 | Backend     | Node.js, Express              |
 | Database    | MongoDB, Mongoose             |
 | Real-time   | Socket.IO                     |
 | Scheduling  | node-cron                     |
+| Execution   | In-memory Mongo (dev) / local Mongo (dev:mongo) |
 
 ## 📁 Project Structure
 
@@ -261,6 +274,9 @@ batch-monitor/
 │       ├── context/
 │       │   ├── SocketContext.js   # WebSocket provider
 │       │   └── JobContext.js      # API context
+│       ├── components/
+│       │   ├── JobForm.js         # Add / Edit job modal
+│       │   └── ExecuteNow.js      # Execute Now split button w/ outcome picker
 │       ├── pages/
 │       │   ├── Dashboard.js       # Main dashboard
 │       │   ├── JobsList.js        # Jobs management
@@ -276,7 +292,7 @@ batch-monitor/
 
 ## 🎨 UI Features
 
-- **Dark Theme**: Professional monitoring dashboard aesthetic
+- **Light Theme**: High-contrast, clean light theme
 - **Responsive Design**: Works on desktop and tablet
 - **Real-time Updates**: Live data via WebSocket
 - **Interactive Graphs**: Clickable dependency nodes

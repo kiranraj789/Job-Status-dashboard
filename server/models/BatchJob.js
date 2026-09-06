@@ -16,7 +16,7 @@ const batchJobSchema = new mongoose.Schema({
   },
   status: { 
     type: String, 
-    enum: ['active', 'paused', 'failed', 'completed'],
+    enum: ['active', 'paused', 'failed', 'completed', 'blocked'],
     default: 'active'
   },
   dependencies: [{
@@ -43,7 +43,11 @@ const BatchJob = mongoose.model('BatchJob', batchJobSchema);
 // 'failed' marks a scheduled job whose latest run failed rather than an
 // operator disablement, so it stays eligible for risk predictions and
 // predictive alerts; 'paused' and 'completed' are operator disablements.
+// 'blocked' marks a dependent job whose upstream dependencies failed, so it
+// is excluded from scheduled pickups until an operator resolves it.
 // Used by the scheduler pickup query, predictions and the pause/resume API.
 BatchJob.SCHEDULED_STATUSES = ['active', 'failed'];
+// Operator can pause (and later resume to 'active') a blocked job to clear it.
+BatchJob.PAUSABLE_STATUSES = ['active', 'failed', 'blocked'];
 
 module.exports = BatchJob;

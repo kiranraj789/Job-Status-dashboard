@@ -6,10 +6,10 @@ import { STATUS } from '../constants';
 import toast from 'react-hot-toast';
 
 const prioritySizes = {
-  critical: 55,
-  high: 48,
-  medium: 42,
-  low: 36
+  critical: 44,
+  high: 40,
+  medium: 36,
+  low: 32
 };
 
 const DependencyGraph = () => {
@@ -43,7 +43,6 @@ const DependencyGraph = () => {
 
     const ctx = canvas.getContext('2d');
     const width = canvas.width = canvas.parentElement.offsetWidth;
-    const height = canvas.height = 500;
 
     // Assign positions using a layered layout
     const nodePositions = {};
@@ -84,13 +83,29 @@ const DependencyGraph = () => {
       }
     });
 
-    // Position nodes
-    layers.forEach((layer, layerIdx) => {
-      const layerWidth = width / (layer.length + 1);
-      layer.forEach((node, nodeIdx) => {
+    // Wide layers used to crowd every node onto one horizontal band, so the
+    // top rows' labels overlapped. Split each layer into stacked sub-rows of
+    // at most MAX_PER_ROW nodes and grow the canvas vertically instead.
+    const MAX_PER_ROW = 4;
+    const ROW_GAP = 150;
+
+    const layoutRows = [];
+    layers.forEach(layer => {
+      for (let i = 0; i < layer.length; i += MAX_PER_ROW) {
+        layoutRows.push(layer.slice(i, i + MAX_PER_ROW));
+      }
+    });
+
+    const height = canvas.height = Math.max(520, 80 + layoutRows.length * ROW_GAP);
+
+    // Position nodes: each layout row is centered on its own horizontal band.
+    layoutRows.forEach((row, rowIdx) => {
+      const y = 70 + rowIdx * ROW_GAP;
+      const slot = width / (row.length + 1);
+      row.forEach((node, nodeIdx) => {
         nodePositions[node.id] = {
-          x: layerWidth * (nodeIdx + 1),
-          y: 60 + layerIdx * (height - 120) / Math.max(layers.length - 1, 1),
+          x: slot * (nodeIdx + 1),
+          y,
           ...node
         };
       });
@@ -180,7 +195,7 @@ const DependencyGraph = () => {
         const lines = [];
         let line = '';
         words.forEach(word => {
-          if ((line + ' ' + word).length > 14) {
+          if ((line + ' ' + word).length > 12) {
             lines.push(line);
             line = word;
           } else {
@@ -261,6 +276,10 @@ const DependencyGraph = () => {
         <div className="legend-item">
           <span className="legend-dot" style={{ background: STATUS.paused.color }} />
           <span>{STATUS.paused.label}</span>
+        </div>
+        <div className="legend-item">
+          <span className="legend-dot" style={{ background: STATUS.blocked.color }} />
+          <span>{STATUS.blocked.label}</span>
         </div>
         <div className="legend-separator" />
         <div className="legend-item">

@@ -309,6 +309,12 @@ body {
   border-color: var(--accent-orange);
 }
 
+.btn-icon.purple:hover {
+  background: rgba(109, 40, 217, 0.12);
+  color: var(--accent-purple);
+  border-color: var(--accent-purple);
+}
+
 .btn-link {
   display: inline-flex;
   align-items: center;
@@ -812,6 +818,10 @@ body {
   border-left: 3px solid var(--accent-yellow);
 }
 
+.job-card.status-blocked {
+  border-left: 3px solid var(--accent-purple);
+}
+
 .job-card-header {
   display: flex;
   justify-content: space-between;
@@ -831,6 +841,7 @@ body {
 .status-active { color: var(--accent-green); }
 .status-failed { color: var(--accent-red); }
 .status-paused { color: var(--accent-yellow); }
+.status-blocked { color: var(--accent-purple); }
 .status-running { color: var(--accent-blue); }
 .status-success { color: var(--accent-green); }
 
@@ -1314,6 +1325,9 @@ body {
 
 .status-badge.active { background: rgba(4, 120, 87, 0.12); color: var(--accent-green); }
 .status-badge.failed { background: rgba(185, 28, 28, 0.12); color: var(--accent-red); }
+.status-badge.paused { background: rgba(180, 83, 9, 0.12); color: var(--accent-yellow); }
+.status-badge.blocked { background: rgba(109, 40, 217, 0.12); color: var(--accent-purple); }
+.status-badge.completed { background: rgba(71, 85, 105, 0.12); color: var(--text-muted); }
 
 .dep-stats {
   display: grid;
@@ -1541,3 +1555,263 @@ body {
   .dep-stats { grid-template-columns: repeat(2, 1fr); }
   .page-container { padding: 20px; }
 }
+
+/* ===== EXECUTE NOW SPLIT BUTTON ===== */
+.execute-group {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.execute-main {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.execute-group .execute-caret {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 0 6px;
+}
+
+.execute-group .btn-primary + .btn-primary {
+  border-left: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.execute-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 300;
+  min-width: 220px;
+  padding: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.execute-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.execute-option:hover {
+  background: var(--bg-hover);
+}
+
+.execute-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.execute-opt-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.execute-opt-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.execute-opt-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ===== MODAL / JOB FORM ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 16px;
+  background: rgba(15, 23, 42, 0.45);
+  overflow-y: auto;
+}
+
+.modal {
+  width: 100%;
+  max-width: 760px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.modal-header h2 {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-field.span-2 {
+  grid-column: span 2;
+}
+
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  border-color: var(--accent-blue);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.form-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.form-error {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: rgba(185, 28, 28, 0.08);
+  border: 1px solid rgba(185, 28, 28, 0.25);
+  border-radius: var(--radius-sm);
+  color: var(--accent-red);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.dep-check-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.dep-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.dep-check:hover {
+  background: var(--bg-hover);
+}
+
+.dep-check.checked {
+  background: rgba(29, 78, 216, 0.06);
+  border-color: rgba(29, 78, 216, 0.35);
+}
+
+.dep-check input {
+  accent-color: var(--accent-blue);
+}
+
+.dep-check-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.dep-check-status {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.dep-check-status.active { color: var(--accent-green); }
+.dep-check-status.failed { color: var(--accent-red); }
+.dep-check-status.paused { color: var(--accent-yellow); }
+.dep-check-status.blocked { color: var(--accent-purple); }
+.dep-check-status.completed { color: var(--text-muted); }

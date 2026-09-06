@@ -11,9 +11,16 @@ const FAILURE_RATE = 0.15;
  * resolving to success or failure. Both the API (manual triggers) and the
  * scheduler run executions through this single implementation so behavior
  * and the failure alert it raises are identical on every path.
+ *
+ * opts.forceOutcome ('success' | 'failed') pins the result so an operator
+ * can record a manual run instead of leaving it to the random simulator.
  */
-function simulateExecution(execution, job, io) {
-  const willFail = Math.random() < FAILURE_RATE;
+function simulateExecution(execution, job, io, opts = {}) {
+  const willFail = opts.forceOutcome === 'failed'
+    ? true
+    : opts.forceOutcome === 'success'
+      ? false
+      : Math.random() < FAILURE_RATE;
 
   // Simulated wall-clock runtime in seconds, scaled from the estimated
   // duration so executions visibly progress instead of completing instantly

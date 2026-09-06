@@ -168,6 +168,18 @@ function assert(condition, msg) {
   }
 }
 
+// Poll until fn() returns a truthy value or the budget is exhausted.
+// Returns the truthy value, or null on timeout.
+async function waitForCondition(fn, timeoutMs = 5000, intervalMs = 250) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const result = await fn();
+    if (result) return result;
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return null;
+}
+
 // Wait for the spawned child to print its bound port, then confirm /health
 // answers on exactly that port. Resolves with the port, or null if the child
 // exited / never announced within the budget.
@@ -377,6 +389,87 @@ async function runTests() {
     `Paused job stays paused after an override run (got ${afterOverride.data.job.status})`);
   const finalResume = await put(`/api/jobs/${jobId}/resume`);
   assert(finalResume.status === 200 && finalResume.data.status === 'active', `Resume after override run`);
+
+  // ============ RECORDED MANUAL OUTCOMES ============
+  console.log('\n--- Recorded Manual Outcomes ---');
+
+  // Invalid outcome is rejected
+  const badOutcome = await post(`/api/jobs/${jobId}/execute`, { outcome: 'maybe' });
+  assert(badOutcome.status === 400, `Invalid execute outcome rejected with 400 (got ${badOutcome.status})`);
+
+  // outcome=success completes the execution as a success
+  const forceSuccess = await post(`/api/jobs/${jobId}/execute`, { outcome: 'success' });
+  assert(forceSuccess.status === 200, `Execute with outcome=success returns 200 (got ${forceSuccess.status})`);
+  const successDone = await waitForCondition(async () => {
+    const e = await get(`/api/jobs/${jobId}/executions?limit=1`);
+    return e.data.executions[0]?.status === 'success';
+  }, 15000);
+  assert(!!successDone, `Forced success execution completes with status success`);
+
+  // outcome=failed completes the execution as a failure
+  const forceFail = await post(`/api/jobs/${jobId}/execute`, { outcome: 'failed' });
+  assert(forceFail.status === 200, `Execute with outcome=failed returns 200 (got ${forceFail.status})`);
+  const failDone = await waitForCondition(async () => {
+    const e = await get(`/api/jobs/${jobId}/executions?limit=1`);
+    return e.data.executions[0]?.status === 'failed';
+  }, 15000);
+  assert(!!failDone, `Forced failure execution completes with status failed`);
+
+  // outcome=running records the run and leaves it running (never completes)
+  const forceRun = await post(`/api/jobs/${jobId}/execute`, { outcome: 'running' });
+  assert(forceRun.status === 200, `Execute with outcome=running returns 200 (got ${forceRun.status})`);
+  assert(forceRun.data.execution.status === 'running', `Running outcome recorded with status running`);
+
+  // ============ DEPENDENCY PROTECTION ON MANUAL EXECUTE ============
+  console.log('\n--- Dependency Protection on Manual Execute ---');
+  const upstream = await post('/api/jobs', {
+    name: 'Upstream ETL', cronExpression: '0 */2 * * *', category: 'ETL',
+    priority: 'high', status: 'active', estimatedDuration: 300
+  });
+  assert(upstream.status === 201, `Seed: create upstream job (got ${upstream.status})`);
+
+  const downstream = await post('/api/jobs', {
+    name: 'Downstream Report', cronExpression: '0 6 * * *', category: 'Reporting',
+    priority: 'high', status: 'active', estimatedDuration: 300,
+    dependencies: [{ job: upstream.data._id, status: 'satisfied' }]
+  });
+  assert(downstream.status === 201, `Seed: create dependent job (got ${downstream.status})`);
+
+  // While the upstream is healthy the dependent job can run
+  const healthyExec = await post(`/api/jobs/${downstream.data._id}/execute`, { outcome: 'success' });
+  assert(healthyExec.status === 200,
+    `Dependent job runs while upstream is healthy (got ${healthyExec.status})`);
+
+  // Fail the upstream, then a manual run of the dependent job must be refused
+  // and the dependent job marked blocked rather than executing.
+  const failUp = await put(`/api/jobs/${upstream.data._id}`, { status: 'failed' });
+  assert(failUp.status === 200, `Upstream set to failed (got ${failUp.status})`);
+
+  const blockedExec = await post(`/api/jobs/${downstream.data._id}/execute`);
+  assert(blockedExec.status === 409,
+    `Manual execute on failed dependency returns 409 (got ${blockedExec.status})`);
+  assert(Array.isArray(blockedExec.data.blockedBy) && blockedExec.data.blockedBy.length >= 1,
+    `Block response lists blockedBy upstream`);
+  assert(blockedExec.data.jobStatus === 'blocked', `Block response reports blocked status`);
+
+  const blockedView = await get(`/api/jobs/${downstream.data._id}`);
+  assert(blockedView.data.job.status === 'blocked',
+    `Dependent job is marked blocked (got ${blockedView.data.job.status})`);
+
+  assert(blockedExec.data.execution === undefined,
+    `Blocked attempt returns no execution`);
+
+  // A blocked job can be paused (operator acknowledge) and resumed to clear it
+  const pauseBlocked = await put(`/api/jobs/${downstream.data._id}/pause`);
+  assert(pauseBlocked.status === 200 && pauseBlocked.data.status === 'paused',
+    `Blocked job can be paused (got ${pauseBlocked.status})`);
+  const unblock = await put(`/api/jobs/${downstream.data._id}/resume`);
+  assert(unblock.status === 200 && unblock.data.status === 'active',
+    `Resume clears blocked job to active (got ${unblock.status})`);
+
+  // Cleanup
+  await del(`/api/jobs/${upstream.data._id}`);
+  await del(`/api/jobs/${downstream.data._id}`);
 
   // ============ DEPENDENCY GRAPH ============
   console.log('\n--- Dependency Graph ---');
