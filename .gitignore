@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+client/build/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Local tooling / workspace metadata
+.freebuff/

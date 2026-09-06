@@ -1,0 +1,30 @@
+{
+  "name": "batch-monitor-server",
+  "version": "1.0.0",
+  "description": "Enterprise Batch Job Monitoring Backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "USE_IN_MEMORY_DB=true nodemon server.js",
+    "dev:mongo": "nodemon server.js",
+    "seed": "node seed/seedData.js",
+    "test": "node test-api.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^16.3.1",
+    "express": "^4.22.2",
+    "mongodb-memory-server": "^11.2.0",
+    "mongoose": "^7.6.3",
+    "node-cron": "^3.0.2",
+    "socket.io": "^4.7.2",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
