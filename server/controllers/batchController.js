@@ -4,6 +4,7 @@ const Alert = require('../models/Alert');
 const { v4: uuidv4 } = require('uuid');
 const { EVENTS, ROOM_ALL, jobRoom } = require('../socketEvents');
 const { simulateExecution } = require('../utils/simulation');
+const { finalizeRun } = require('../utils/executionOutcomes');
 const { computeJobRisk, RISK } = require('../utils/riskEngine');
 
 // Get all batch jobs with stats
@@ -256,6 +257,85 @@ exports.getExecutions = async (req, res) => {
   }
 };
 
+// Record a completed (or still-running) execution directly — an operator
+// backfilling what actually happened instead of relying on the simulator.
+// Body: { status: success|failed|running|timeout, startedAt?, completedAt?,
+// recordsProcessed?, recordsFailed?, error? (string or {message, code}) }
+// A failed/timeout record applies the same job consequences as a real failed
+// run (failure alert + dependent jobs blocked); success resets counters.
+exports.recordExecution = async (req, res) => {
+  try {
+    const ALLOWED = ['success', 'failed', 'running', 'timeout'];
+    const { status, startedAt, completedAt, recordsProcessed, recordsFailed, error } = req.body || {};
+
+    if (!status || !ALLOWED.includes(status)) {
+      return res.status(400).json({ error: `Invalid execution status '${status}'. Use ${ALLOWED.join(', ')}` });
+    }
+
+    const job = await BatchJob.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const start = startedAt ? new Date(startedAt) : new Date();
+    if (Number.isNaN(start.getTime())) {
+      return res.status(400).json({ error: 'Invalid startedAt timestamp' });
+    }
+    const isRunning = status === 'running';
+    const end = isRunning ? null : (completedAt ? new Date(completedAt) : new Date());
+    if (!isRunning && Number.isNaN(end.getTime())) {
+      return res.status(400).json({ error: 'Invalid completedAt timestamp' });
+    }
+    if (end && end < start) {
+      return res.status(400).json({ error: 'completedAt must be after startedAt' });
+    }
+    const durationSec = end ? (end.getTime() - start.getTime()) / 1000 : 0;
+    const errorInfo = error
+      ? (typeof error === 'string' ? { message: error, code: 'E_RECORDED' } : error)
+      : undefined;
+
+    const execution = await Execution.create({
+      job: job._id,
+      executionId: `EXEC-${uuidv4().slice(0, 8).toUpperCase()}`,
+      status,
+      startedAt: start,
+      completedAt: end || undefined,
+      duration: isRunning ? undefined : Math.max(0, Math.round(durationSec)),
+      recordsProcessed: recordsProcessed || 0,
+      recordsFailed: recordsFailed || 0,
+      error: (status === 'failed' || status === 'timeout') ? errorInfo : undefined,
+      triggeredBy: 'manual'
+    });
+
+    const io = req.app.get('io');
+
+    if (isRunning) {
+      job.lastExecution = start;
+      await job.save();
+      if (io) {
+        io.to(jobRoom(job._id)).emit(EVENTS.EXECUTION_START, { jobId: job._id, execution });
+        io.to(ROOM_ALL).emit(EVENTS.JOB_STATUS_CHANGE, { jobId: job._id, status: 'running' });
+      }
+      return res.status(201).json({ execution });
+    }
+
+    job.lastExecution = end;
+    await job.save();
+
+    // Same consequences as a simulated run resolving to that outcome.
+    await finalizeRun(execution, job, io, {
+      willFail: status !== 'success',
+      durationSec: Math.max(0.5, durationSec),
+      recordsProcessed,
+      recordsFailed,
+      error: (status === 'failed' || status === 'timeout') ? errorInfo : null,
+      alreadyComplete: true
+    });
+
+    res.status(201).json({ execution });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // Get dependency graph
 exports.getDependencyGraph = async (req, res) => {
   try {
@@ -274,10 +354,15 @@ exports.getDependencyGraph = async (req, res) => {
     jobs.forEach(job => {
       job.dependencies.forEach(dep => {
         if (dep.job) {
+          // An edge is red when its link was marked failed OR the upstream is
+          // currently unhealthy (failed or blocked) — the path the cascade
+          // took shows up red even when the link predates the failure.
+          const upstream = dep.job;
+          const unhealthy = upstream.status === 'failed' || upstream.status === 'blocked';
           edges.push({
-            source: dep.job._id.toString(),
+            source: upstream._id.toString(),
             target: job._id.toString(),
-            status: dep.status
+            status: dep.status === 'failed' || unhealthy ? 'failed' : (dep.status === 'satisfied' ? 'satisfied' : dep.status)
           });
         }
       });

@@ -1,7 +1,6 @@
-const BatchJob = require('../models/BatchJob');
 const Execution = require('../models/Execution');
-const Alert = require('../models/Alert');
 const { EVENTS, ROOM_ALL, jobRoom } = require('../socketEvents');
+const { finalizeRun } = require('./executionOutcomes');
 
 // Simulated failure probability for demo executions (scheduler and manual runs)
 const FAILURE_RATE = 0.15;
@@ -46,66 +45,15 @@ function simulateExecution(execution, job, io, opts = {}) {
 
       const completedAt = new Date();
       const durationSec = (completedAt - execution.startedAt) / 1000;
+      const errorMessage = 'Simulated processing error';
 
-      await Execution.findByIdAndUpdate(execution._id, {
-        status: willFail ? 'failed' : 'success',
-        completedAt,
-        duration: Math.round(durationSec),
-        progress: 100,
+      await finalizeRun(execution, job, io, {
+        willFail,
+        durationSec,
         recordsProcessed: Math.floor(Math.random() * 10000),
-        recordsFailed: willFail ? Math.floor(Math.random() * 500) : 0,
-        error: willFail ? { message: 'Simulated processing error', code: 'E_PROCESS_FAIL' } : undefined
+        recordsFailed: Math.floor(Math.random() * 500),
+        error: willFail ? { message: errorMessage, code: 'E_PROCESS_FAIL' } : null
       });
-
-      // A paused job stays paused through an operator-override run: the
-      // outcome only touches counters/status when the job is scheduled
-      // (active or failed), never an explicit operator pause.
-      const jobAfterRun = {};
-      if (willFail) {
-        jobAfterRun.$inc = { consecutiveFailures: 1 };
-        if (job.status !== 'paused') jobAfterRun.$set = { status: 'failed' };
-        await BatchJob.findByIdAndUpdate(job._id, jobAfterRun);
-
-        const alert = await Alert.create({
-          type: 'failure',
-          severity: job.priority === 'critical' ? 'critical' : 'error',
-          title: `Job Failed: ${job.name}`,
-          message: `Execution ${execution.executionId} failed after ${Math.round(durationSec)}s`,
-          job: job._id,
-          execution: execution._id
-        });
-
-        if (io) {
-          io.to(ROOM_ALL).emit(EVENTS.ALERT_NEW, {
-            type: alert.type,
-            severity: alert.severity,
-            title: alert.title,
-            message: alert.message,
-            jobName: job.name,
-            jobId: job._id,
-            executionId: execution._id
-          });
-        }
-      } else {
-        jobAfterRun.consecutiveFailures = 0;
-        if (job.status !== 'paused') jobAfterRun.status = 'active';
-        await BatchJob.findByIdAndUpdate(job._id, jobAfterRun);
-      }
-
-      const resultingJobStatus = job.status === 'paused' ? 'paused' : (willFail ? 'failed' : 'active');
-
-      if (io) {
-        io.to(jobRoom(job._id)).emit(EVENTS.EXECUTION_COMPLETE, {
-          jobId: job._id,
-          executionId: execution._id,
-          status: willFail ? 'failed' : 'success',
-          duration: Math.round(durationSec)
-        });
-        io.to(ROOM_ALL).emit(EVENTS.JOB_STATUS_CHANGE, {
-          jobId: job._id,
-          status: resultingJobStatus
-        });
-      }
     }
   }, intervalMs);
 }

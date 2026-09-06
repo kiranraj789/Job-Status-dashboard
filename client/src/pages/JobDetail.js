@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import JobForm from '../components/JobForm';
 import ExecuteNow from '../components/ExecuteNow';
+import RecordExecution from '../components/RecordExecution';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, LineChart, Line 
@@ -144,6 +145,7 @@ const JobDetail = () => {
           <button className="btn-secondary" onClick={() => setFormOpen(true)}>
             <Pencil size={16} /> Edit
           </button>
+          <RecordExecution jobId={job._id} jobName={job.name} onDone={fetchData} />
           <ExecuteNow jobId={job._id} onAfterRun={fetchData} />
         </div>
       </div>

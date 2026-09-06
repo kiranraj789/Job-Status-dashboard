@@ -28,23 +28,37 @@ const initScheduler = (socketIo) => {
         );
 
         if (depsFailed) {
-          await Alert.create({
+          // Same dependency protection as manual runs: the job is marked
+          // blocked (rather than left 'active' retrying every cycle) and an
+          // alert names the failing upstream as the root cause.
+          const failedUpstream = job.dependencies
+            .filter(d => d.job && d.job.status === 'failed')
+            .map(d => d.job.name);
+
+          job.status = 'blocked';
+          await job.save();
+
+          const alert = await Alert.create({
             type: 'dependency',
             severity: 'warning',
-            title: `Dependency failure blocking: ${job.name}`,
-            message: `Cannot execute ${job.name} due to upstream dependency failures`,
+            title: `Blocked: ${job.name}`,
+            message: `${job.name} is blocked because upstream dependency ${failedUpstream.join(', ')} failed (root cause)`,
             job: job._id,
             metadata: {
-              affectedDownstream: job.dependencies
-                .filter(d => d.job && d.job.status === 'failed')
-                .map(d => d.job.name)
+              rootCause: failedUpstream.join(', '),
+              affectedDownstream: failedUpstream
             }
           });
 
           if (io) {
+            io.to(ROOM_ALL).emit(EVENTS.JOB_STATUS_CHANGE, { jobId: job._id, status: 'blocked' });
             io.to(ROOM_ALL).emit(EVENTS.ALERT_NEW, {
               type: 'dependency',
-              jobName: job.name
+              severity: alert.severity,
+              title: alert.title,
+              message: alert.message,
+              jobName: job.name,
+              jobId: job._id
             });
           }
           continue;

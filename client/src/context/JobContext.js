@@ -48,6 +48,8 @@ export const JobProvider = ({ children }) => {
   const deleteJob = (id) => apiCall(`/jobs/${id}`, { method: 'DELETE' });
   const triggerExecution = (id, outcome = 'random') =>
     apiCall(`/jobs/${id}/execute`, { method: 'POST', body: JSON.stringify({ outcome }) });
+  const recordExecution = (id, data) =>
+    apiCall(`/jobs/${id}/record`, { method: 'POST', body: JSON.stringify(data) });
   const getExecutions = (id, params = {}) => {
     const query = new URLSearchParams(params).toString();
     return apiCall(`/jobs/${id}/executions?${query}`);
@@ -64,7 +66,7 @@ export const JobProvider = ({ children }) => {
     <JobContext.Provider value={{
       loading, error,
       getDashboardStats, getJobs, getJob, createJob, updateJob, pauseJob, resumeJob, deleteJob,
-      triggerExecution, getExecutions, getDependencyGraph, getPredictions,
+      triggerExecution, recordExecution, getExecutions, getDependencyGraph, getPredictions,
       getAlerts, acknowledgeAlert
     }}>
       {children}

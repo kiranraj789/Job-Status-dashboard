@@ -24,7 +24,8 @@ const alertSchema = new mongoose.Schema({
     predictedFailure: Date,
     confidence: Number,
     impactScore: Number,
-    affectedDownstream: [String]
+    affectedDownstream: [String],
+    rootCause: String
   },
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });

@@ -26,6 +26,7 @@ router.delete('/jobs/:id', requireValidId, batchController.deleteJob);
 // Executions
 router.get('/jobs/:id/executions', requireValidId, batchController.getExecutions);
 router.post('/jobs/:id/execute', requireValidId, batchController.triggerExecution);
+router.post('/jobs/:id/record', requireValidId, batchController.recordExecution);
 
 // Dependency Graph
 router.get('/dependencies/graph', batchController.getDependencyGraph);

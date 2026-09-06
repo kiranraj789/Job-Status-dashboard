@@ -420,6 +420,57 @@ async function runTests() {
   assert(forceRun.status === 200, `Execute with outcome=running returns 200 (got ${forceRun.status})`);
   assert(forceRun.data.execution.status === 'running', `Running outcome recorded with status running`);
 
+  // ============ RECORD EXECUTION (BACKFILL) ============
+  console.log('\n--- Record Execution (Backfill) ---');
+
+  const badRecord = await post(`/api/jobs/${jobId}/record`, { status: 'maybe' });
+  assert(badRecord.status === 400, `Invalid record status rejected with 400 (got ${badRecord.status})`);
+
+  const startIso = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  const endIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const rec = await post(`/api/jobs/${jobId}/record`, {
+    status: 'failed',
+    startedAt: startIso,
+    completedAt: endIso,
+    recordsProcessed: 4200,
+    recordsFailed: 137,
+    error: 'Validation failed: 137 malformed rows'
+  });
+  assert(rec.status === 201, `Record failed execution returns 201 (got ${rec.status})`);
+  assert(rec.data.execution.status === 'failed', `Recorded execution is failed`);
+  assert(rec.data.execution.recordsProcessed === 4200, `Recorded execution keeps recordsProcessed`);
+  assert(rec.data.execution.recordsFailed === 137, `Recorded execution keeps recordsFailed`);
+  assert(rec.data.execution.error && /137 malformed/.test(rec.data.execution.error.message),
+    `Recorded execution stores the operator error message`);
+  const recDur = Math.round((new Date(endIso) - new Date(startIso)) / 1000);
+  assert(rec.data.execution.duration === recDur,
+    `Recorded execution duration derives from start/end times (${rec.data.execution.duration} vs ${recDur})`);
+
+  const recFailedJob = await get(`/api/jobs/${jobId}`);
+  assert(recFailedJob.data.job.status === 'failed', `Recorded failure marks the job failed`);
+  assert(recFailedJob.data.job.consecutiveFailures >= 1, `Recorded failure increments consecutiveFailures`);
+
+  // Timestamps order is validated
+  const badOrder = await post(`/api/jobs/${jobId}/record`, {
+    status: 'success', startedAt: endIso, completedAt: startIso
+  });
+  assert(badOrder.status === 400, `Record rejects completedAt before startedAt (got ${badOrder.status})`);
+
+  // A recorded success resets the counters and restores the job
+  const recSuccess = await post(`/api/jobs/${jobId}/record`, {
+    status: 'success', startedAt: startIso, completedAt: endIso, recordsProcessed: 9000
+  });
+  assert(recSuccess.status === 201 && recSuccess.data.execution.status === 'success',
+    `Record success execution returns 201`);
+  const afterSuccess = await get(`/api/jobs/${jobId}`);
+  assert(afterSuccess.data.job.status === 'active', `Recorded success restores job to active`);
+  assert(afterSuccess.data.job.consecutiveFailures === 0, `Recorded success resets consecutiveFailures`);
+
+  const recRunning = await post(`/api/jobs/${jobId}/record`, { status: 'running', startedAt: startIso });
+  assert(recRunning.status === 201 && recRunning.data.execution.status === 'running',
+    `Record running execution returns 201`);
+  assert(recRunning.data.execution.completedAt === undefined, `Running record has no completedAt`);
+
   // ============ DEPENDENCY PROTECTION ON MANUAL EXECUTE ============
   console.log('\n--- Dependency Protection on Manual Execute ---');
   const upstream = await post('/api/jobs', {
@@ -470,6 +521,73 @@ async function runTests() {
   // Cleanup
   await del(`/api/jobs/${upstream.data._id}`);
   await del(`/api/jobs/${downstream.data._id}`);
+
+  // ============ CASCADE BLOCKING ON UPSTREAM FAILURE ============
+  console.log('\n--- Cascade Blocking on Upstream Failure ---');
+  const root = await post('/api/jobs', {
+    name: 'Customer Data Import', cronExpression: '0 */2 * * *', category: 'ETL',
+    priority: 'critical', status: 'active', estimatedDuration: 600
+  });
+  const mid = await post('/api/jobs', {
+    name: 'Data Validation', cronExpression: '0 */2 * * *', category: 'Analytics',
+    priority: 'high', status: 'active', estimatedDuration: 300,
+    dependencies: [{ job: root.data._id, status: 'satisfied' }]
+  });
+  const leaf = await post('/api/jobs', {
+    name: 'Sales Report Generation', cronExpression: '0 */2 * * *', category: 'Reporting',
+    priority: 'high', status: 'active', estimatedDuration: 300,
+    dependencies: [{ job: mid.data._id, status: 'satisfied' }]
+  });
+  assert(root.status === 201 && mid.status === 201 && leaf.status === 201, `Seed cascade chain A->B->C`);
+
+  // When the mid job's run fails, it and its transitive dependents go blocked
+  const recFail = await post(`/api/jobs/${mid.data._id}/record`, {
+    status: 'failed',
+    recordsProcessed: 5000,
+    error: 'Schema violation in source feed'
+  });
+  assert(recFail.status === 201, `Record failure on middle job returns 201`);
+
+  const midView = await get(`/api/jobs/${mid.data._id}`);
+  assert(midView.data.job.status === 'failed', `Failed job itself is marked failed`);
+  const leafView = await get(`/api/jobs/${leaf.data._id}`);
+  assert(leafView.data.job.status === 'blocked', `Direct dependent marked blocked (got ${leafView.data.job.status})`);
+
+  // Root job stays healthy; nobody upstream is affected
+  const rootView = await get(`/api/jobs/${root.data._id}`);
+  assert(rootView.data.job.status === 'active', `Upstream root stays active`);
+
+  // Blocked dependents raise alerts naming the root cause
+  const cascadeAlerts = await get('/api/alerts');
+  const blockedAlerts = cascadeAlerts.data.alerts.filter(a =>
+    a.type === 'dependency' && a.metadata && a.metadata.rootCause === mid.data._id);
+  assert(blockedAlerts.length === 1, `Exactly one blocking alert for the dependent (got ${blockedAlerts.length})`);
+  assert(/root cause/.test(blockedAlerts[0].message), `Blocking alert identifies the root cause`);
+
+  // Recording the same failure again does not stack duplicate blocking alerts
+  const recFail2 = await post(`/api/jobs/${mid.data._id}/record`, {
+    status: 'failed', error: 'Schema violation again'
+  });
+  assert(recFail2.status === 201, `Second recorded failure accepted`);
+  const cascadeAlerts2 = await get('/api/alerts');
+  const blockedAlerts2 = cascadeAlerts2.data.alerts.filter(a =>
+    a.type === 'dependency' && a.metadata && a.metadata.rootCause === mid.data._id);
+  assert(blockedAlerts2.length === 1, `Repeated failure does not stack blocking alerts (got ${blockedAlerts2.length})`);
+
+  // The dependency graph paints the cascade path red (failed upstreams)
+  const cascadeGraph = await get('/api/dependencies/graph');
+  const midNode = cascadeGraph.data.nodes.find(n => n.id === mid.data._id);
+  const leafNode = cascadeGraph.data.nodes.find(n => n.id === leaf.data._id);
+  assert(midNode && midNode.status === 'failed', `Graph node shows failed for the broken job`);
+  assert(leafNode && leafNode.status === 'blocked', `Graph node shows blocked for the dependent`);
+  const edgeToLeaf = cascadeGraph.data.edges.find(e => e.target === leaf.data._id);
+  assert(edgeToLeaf && edgeToLeaf.status === 'failed',
+    `Graph edge to the dependent renders failed/red (got ${edgeToLeaf && edgeToLeaf.status})`);
+
+  // Cleanup the chain
+  await del(`/api/jobs/${leaf.data._id}`);
+  await del(`/api/jobs/${mid.data._id}`);
+  await del(`/api/jobs/${root.data._id}`);
 
   // ============ DEPENDENCY GRAPH ============
   console.log('\n--- Dependency Graph ---');
