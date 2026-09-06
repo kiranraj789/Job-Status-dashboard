@@ -637,6 +637,19 @@ async function runTests() {
     const ack = await put(`/api/alerts/${alert._id}/acknowledge`);
     assert(ack.status === 200, `Acknowledge alert returns 200`);
     assert(ack.data.acknowledged === true, `Alert is now acknowledged`);
+    assert(ack.data.isActive === false, `Acknowledged alert is deactivated (isActive false)`);
+
+    // It must leave the active list but stay queryable in the all view
+    const afterActive = await get('/api/alerts?active=true');
+    assert(
+      !afterActive.data.alerts.some(a => a._id === alert._id),
+      `Acknowledged alert removed from active list`
+    );
+    const afterAll = await get('/api/alerts');
+    assert(
+      afterAll.data.alerts.some(a => a._id === alert._id),
+      `Acknowledged alert still visible in all view`
+    );
   }
 
   // ============ SEED DATA VERIFICATION ============

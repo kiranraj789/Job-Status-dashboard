@@ -486,12 +486,13 @@ exports.getAlerts = async (req, res) => {
   }
 };
 
-// Acknowledge an alert
+// Acknowledge an alert. Acknowledging also deactivates it so it leaves the
+// active list (isActive: false) — it remains queryable via the 'all' view.
 exports.acknowledgeAlert = async (req, res) => {
   try {
     const alert = await Alert.findByIdAndUpdate(
       req.params.id,
-      { acknowledged: true, acknowledgedBy: req.body.user || 'admin', acknowledgedAt: new Date() },
+      { acknowledged: true, acknowledgedBy: req.body.user || 'admin', acknowledgedAt: new Date(), isActive: false },
       { new: true }
     );
     if (!alert) return res.status(404).json({ error: 'Alert not found' });
