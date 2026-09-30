@@ -25,7 +25,6 @@ function App() {
           <div className="logo">
             <span className="logo-text">BatchMonitor</span>
           </div>
-          <span className="logo-badge">Enterprise</span>
         </div>
         
         <nav className="sidebar-nav">

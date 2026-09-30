@@ -79,19 +79,6 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
-.logo-badge {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 2px 8px;
-  background: rgba(180, 83, 9, 0.12);
-  color: var(--accent-yellow);
-  font-size: 10px;
-  font-weight: 600;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
 .sidebar-nav {
   flex: 1;
   padding: 16px 12px;
