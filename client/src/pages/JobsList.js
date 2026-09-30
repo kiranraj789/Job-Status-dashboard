@@ -103,7 +103,7 @@ const JobsList = () => {
       <div className="page-header">
         <div>
           <h1>Batch Jobs</h1>
-          <p className="subtitle">Manage and monitor all scheduled jobs</p>
+          <p className="subtitle">Manage and monitor all scheduled jobs Kiran</p>
         </div>
         <button className="btn-primary" onClick={openAdd}>
           <Plus size={16} /> Add Job

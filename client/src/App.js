@@ -2,7 +2,7 @@ import React from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, ListChecks, GitBranch, Bell, 
-  Activity, Settings, Zap
+  Activity, Settings
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import JobsList from './pages/JobsList';
@@ -23,7 +23,6 @@ function App() {
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="logo">
-            <Zap size={24} className="logo-icon" />
             <span className="logo-text">BatchMonitor</span>
           </div>
           <span className="logo-badge">Enterprise</span>

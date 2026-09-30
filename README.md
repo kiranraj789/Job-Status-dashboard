@@ -107,15 +107,28 @@ CLIENT_URL=http://localhost:3000
 
 ### Database Setup
 
-**Option A - In-memory MongoDB (zero setup, recommended for demos):**
+**Option A - Local MongoDB (recommended for your own data):**
 
-The default `npm run dev` script starts an embedded in-memory MongoDB — no local MongoDB install required. If the database is empty, the server automatically seeds it with 15 demo jobs, 300 executions, and 5 alerts, so the dashboard is populated on first launch.
+The default `npm run dev` command now uses the persistent MongoDB database from
+`server/.env`. `AUTO_SEED=false` means the dashboard starts empty and only
+shows jobs, executions, and alerts that you enter yourself.
 
-> ⚠️ **In-memory data is ephemeral.** Every job, execution, and alert you create
-> while running `npm run dev` lives only in RAM and is lost the moment the
-> server restarts. Use **Option B** when you want your data to persist.
+```bash
+# Start your local MongoDB service first
+cd server
+npm run dev
+```
 
-**Option B - Local/Atlas MongoDB (persistent):**
+Use **Add Job**, **Edit**, and **Record Execution** in the React app to manage
+your own data. Do not run `npm run seed` unless you intentionally want the
+sample records.
+
+**Option B - In-memory demo data (temporary):**
+
+Run `npm run dev:demo` only when you want the seeded sample dashboard. Its
+data lives in RAM and disappears when the backend stops.
+
+**Option C - Local/Atlas MongoDB (persistent):**
 
 ```bash
 # Start MongoDB (if running locally)

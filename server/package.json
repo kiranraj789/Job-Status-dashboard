@@ -5,8 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "USE_IN_MEMORY_DB=true nodemon server.js",
+    "dev": "nodemon server.js",
     "dev:mongo": "nodemon server.js",
+    "dev:demo": "USE_IN_MEMORY_DB=true AUTO_SEED=true nodemon server.js",
     "seed": "node seed/seedData.js",
     "test": "node test-api.js"
   },

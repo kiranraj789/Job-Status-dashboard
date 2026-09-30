@@ -71,10 +71,6 @@ body {
   gap: 10px;
 }
 
-.logo-icon {
-  color: var(--accent-yellow);
-}
-
 .logo-text {
   font-size: 18px;
   font-weight: 700;
